@@ -678,7 +678,7 @@ impl<'lib> Camera<'lib> {
         let sz = sz.try_into().unwrap(); // convert to u32 from usize
         vimba_call!(self.vimba_lib.VmbSettingsSave(
             self.handle,
-            buf.as_ptr() as *const i8,
+            buf.as_ptr().cast::<std::ffi::c_char>(),
             p_settings as *const _,
             sz
         ))?;
@@ -696,7 +696,7 @@ impl<'lib> Camera<'lib> {
         let sz = sz.try_into().unwrap(); // convert to u32 from usize
         vimba_call!(self.vimba_lib.VmbSettingsLoad(
             self.handle,
-            buf.as_ptr() as *const i8,
+            buf.as_ptr().cast::<std::ffi::c_char>(),
             p_settings as *const _,
             sz
         ))?;

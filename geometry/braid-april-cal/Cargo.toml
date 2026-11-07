@@ -1,0 +1,33 @@
+[package]
+name = "braid-april-cal"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "multi-camera calibration using AprilTag detections and the SQPnP algorithm"
+
+[dependencies]
+tracing.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+serde_yaml.workspace = true
+itertools.workspace = true
+nalgebra.workspace = true
+cam-geom.workspace = true
+opencv-ros-camera = { workspace = true, features = ["serde-serialize"] }
+chrono.workspace = true
+dlt = { workspace = true, features = ["default", "serde-serialize"] }
+argmin = { version = "0.11.0", features = [
+    "wasm-bindgen",
+], default-features = false }
+argmin-math = "0.5.0"
+sqpnp = "0.4.0"
+glam = "0.30.8"
+
+apriltag-detection-writer.workspace = true
+braid-apriltag-types.workspace = true
+braid-mvg.workspace = true
+flydra-mvg.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+ads-webasm = { workspace = true, features = ["csv-widget"] }

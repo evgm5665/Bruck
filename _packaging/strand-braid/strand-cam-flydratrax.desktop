@@ -1,0 +1,10 @@
+[Desktop Entry]
+Encoding=UTF-8
+Version=0.1.0
+Type=Application
+Categories=Application
+Exec=/usr/bin/strand-cam-flydratrax --led-box /dev/ttyACM0
+Name=Strand Camera (flydratrax)
+Terminal=false
+GenericName=Live camera-based tracking
+Comment=

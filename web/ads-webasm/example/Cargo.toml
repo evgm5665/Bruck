@@ -1,0 +1,22 @@
+[package]
+name = "ads-webasm-example"
+version = "0.1.0"
+authors = ["Andrew Straw <strawman@astraw.com>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "example usage of yew components used in Strand Camera and Braid"
+
+[dependencies]
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+chrono.workspace = true
+yew.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+yew-tincture.workspace = true
+log.workspace = true
+wasm-logger.workspace = true
+
+ads-webasm = { workspace = true, features = ["csv-widget"] }
+strand-cam-bui-types.workspace = true
+strand-cam-enum-iter.workspace = true

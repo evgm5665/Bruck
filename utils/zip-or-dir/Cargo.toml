@@ -1,0 +1,16 @@
+[package]
+name = "zip-or-dir"
+description = "read files from either a zip file or a directory"
+version = "0.1.0"
+authors = ["Andrew Straw <strawman@astraw.com>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+categories = ["compression", "filesystem"]
+
+[dependencies]
+zip.workspace = true
+thiserror.workspace = true
+libflate.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

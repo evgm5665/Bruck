@@ -1,0 +1,210 @@
+name: Build strand-braid Debian packages
+
+# Build a strand-braid .deb for each supported Ubuntu version, so that release
+# artifacts can be built and published directly from GitHub.
+#
+# Two jobs share one packaging implementation (the
+# .github/actions/package-strand-braid-deb composite action); they differ only
+# in how the build environment is provisioned:
+#
+#   * strand-braid-deb         - builds natively on GitHub-hosted runners, for
+#                                the Ubuntu versions GitHub provides runners for
+#                                (currently 22.04 and 24.04).
+#   * strand-braid-deb-container - builds inside an `ubuntu:<codename>` Docker
+#                                container, for the Ubuntu versions that have no
+#                                hosted runner (20.04, retired; and 26.04, the
+#                                new LTS not yet offered as a runner). Building
+#                                inside the target distro's container yields
+#                                binaries linked against that distro's glibc and
+#                                lets dpkg-shlibdeps compute per-distro
+#                                dependencies -- the same model the GitLab CI
+#                                uses, where the runner *is* the container.
+#
+# The proprietary camera SDKs (Basler Pylon, Allied Vision Vimba) are loaded at
+# runtime via dlopen, so they are not needed to build or package these binaries.
+# Only the small public Pylon C-ABI shim is downloaded (in the composite action).
+
+on:
+  push:
+    branches: [main]
+    tags: ["*"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Native builds on GitHub-hosted runners.
+  strand-braid-deb:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: ubuntu-22.04
+            ubuntu-version: "2204"
+          - runs-on: ubuntu-24.04
+            ubuntu-version: "2404"
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      # The Debian packaging infrastructure needs the .so files available so that
+      # dpkg-shlibdeps can automatically determine package dependencies. The list
+      # is a superset of what is strictly required (it includes the build
+      # dependencies from _packaging/setup-ubuntu-base.sh).
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          DEBIAN_FRONTEND=noninteractive sudo apt-get install -y \
+            dpkg-dev debhelper libudev-dev zlib1g-dev pkg-config curl \
+            build-essential git libvpx-dev clang libclang-dev llvm-dev zip cmake
+
+      - name: Install Rust wasm target and trunk
+        run: |
+          rustup target add wasm32-unknown-unknown
+          curl --location --remote-name https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-musl.tar.gz
+          tar xzf trunk-x86_64-unknown-linux-musl.tar.gz
+          sudo mv trunk /usr/local/bin/
+          trunk --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.ubuntu-version }}
+
+      - name: Build, package, and publish .deb
+        uses: ./.github/actions/package-strand-braid-deb
+        with:
+          ubuntu-version: ${{ matrix.ubuntu-version }}
+
+  # Containerized builds for Ubuntu versions that have no GitHub-hosted runner.
+  strand-braid-deb-container:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:focal
+            ubuntu-version: "2004"
+          - image: ubuntu:resolute
+            ubuntu-version: "2604"
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      # git must be present before actions/checkout runs, otherwise checkout
+      # silently falls back to a REST-API download that omits submodules. (The
+      # plain ubuntu:* images ship no git.)
+      - name: Install git for checkout
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y git
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      # Plain ubuntu:* images carry no toolchain, so unlike the native job we
+      # install the build dependencies, Rust, the wasm target, and trunk here.
+      # We run as root inside the container, so no sudo. The package list mirrors
+      # the native job (dpkg-shlibdeps needs the .so files to resolve deps).
+      - name: Install build dependencies
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            dpkg-dev debhelper libudev-dev zlib1g-dev pkg-config curl \
+            build-essential git libvpx-dev clang libclang-dev llvm-dev zip cmake cpio
+
+      - name: Install Rust toolchain, wasm target, and trunk
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustc --version
+          rustup target add wasm32-unknown-unknown
+          curl --location --remote-name https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-musl.tar.gz
+          tar xzf trunk-x86_64-unknown-linux-musl.tar.gz
+          mv trunk "$HOME/.cargo/bin/"
+          trunk --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.ubuntu-version }}
+
+      - name: Build, package, and publish .deb
+        uses: ./.github/actions/package-strand-braid-deb
+        with:
+          ubuntu-version: ${{ matrix.ubuntu-version }}
+
+  # On tag pushes, once every .zip has been published to the GitHub Release,
+  # prepend a download table to the release notes so users see the assets
+  # without having to expand the collapsed "Assets" section. The table is
+  # generated from the assets actually attached to the release, so it stays in
+  # sync with whatever the build jobs uploaded.
+  update-release-notes:
+    name: Add download table to release notes
+    needs: [strand-braid-deb, strand-braid-deb-container]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepend download table to release body
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          base_url="https://github.com/${REPO}/releases/download/${TAG}"
+
+          # Map the Ubuntu version label embedded in each zip name to its
+          # release codename (kept in sync with the build matrices above).
+          codename() {
+            case "$1" in
+              2004) echo "20.04 (Focal)" ;;
+              2204) echo "22.04 (Jammy)" ;;
+              2404) echo "24.04 (Noble)" ;;
+              2604) echo "26.04 (Resolute)" ;;
+              *) echo "$1" ;;
+            esac
+          }
+
+          # Build the table, wrapped in HTML-comment markers. The markers let a
+          # re-run replace (rather than duplicate) the table while preserving any
+          # release notes added below it.
+          table_file="$(mktemp)"
+          {
+            echo "<!-- BEGIN DOWNLOAD TABLE (auto-generated) -->"
+            echo "## Downloads"
+            echo
+            echo "| Download | Ubuntu version |"
+            echo "| :--- | :--- |"
+            gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' \
+              | grep -E '^strand-braid-ubuntu-[0-9]+-.*\.zip$' \
+              | sort \
+              | while read -r zip; do
+                  ver="$(printf '%s' "$zip" | sed -E 's/^strand-braid-ubuntu-([0-9]+)-.*/\1/')"
+                  echo "| [\`${zip}\`](${base_url}/${zip}) | $(codename "$ver") |"
+                done
+            echo "<!-- END DOWNLOAD TABLE (auto-generated) -->"
+          } > "$table_file"
+
+          # Current body, with any previously auto-generated table stripped out
+          # and leading blank lines trimmed.
+          rest_file="$(mktemp)"
+          gh release view "$TAG" --repo "$REPO" --json body --jq .body \
+            | sed '/<!-- BEGIN DOWNLOAD TABLE/,/<!-- END DOWNLOAD TABLE/d' \
+            | sed '/./,$!d' > "$rest_file"
+
+          body_file="$(mktemp)"
+          cat "$table_file" > "$body_file"
+          if [ -s "$rest_file" ]; then
+            printf '\n\n' >> "$body_file"
+            cat "$rest_file" >> "$body_file"
+          fi
+
+          gh release edit "$TAG" --repo "$REPO" --notes-file "$body_file"

@@ -1,0 +1,176 @@
+// Copyright (C) The Strand-Braid Authors
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+use camino::Utf8PathBuf;
+use clap::{Parser, ValueEnum};
+use eyre::{self, Context, Result};
+use indicatif::{ProgressBar, ProgressStyle};
+
+use rusttype::Font;
+
+use font_drawing::stamp_frame;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about)]
+struct Cli {
+    /// Input MP4 video.
+    #[arg(long)]
+    input: camino::Utf8PathBuf,
+
+    /// Output MP4 file.
+    #[arg(long)]
+    output: Utf8PathBuf,
+
+    /// Source of timestamp.
+    #[arg(long, value_enum, default_value_t)]
+    timestamp_source: TimestampSource,
+
+    /// Disable showing progress
+    #[arg(short, long, default_value_t)]
+    no_progress: bool,
+
+    /// Truncate video after this frame number (0-based, inclusive)
+    #[arg(long)]
+    pub stop_frame: Option<u64>,
+}
+
+#[derive(Default, Debug, Clone, Copy, ValueEnum, PartialEq)]
+enum TimestampSource {
+    #[default]
+    BestGuess,
+    FrameInfoRecvTime,
+    Mp4Pts,
+    MispMicrosectime,
+    SrtFile,
+}
+
+impl From<TimestampSource> for frame_source::TimestampSource {
+    fn from(orig: TimestampSource) -> Self {
+        match orig {
+            TimestampSource::BestGuess => frame_source::TimestampSource::BestGuess,
+            TimestampSource::FrameInfoRecvTime => frame_source::TimestampSource::FrameInfoRecvTime,
+            TimestampSource::SrtFile => frame_source::TimestampSource::SrtFile,
+            TimestampSource::Mp4Pts => frame_source::TimestampSource::Mp4Pts,
+            TimestampSource::MispMicrosectime => frame_source::TimestampSource::MispMicrosectime,
+        }
+    }
+}
+
+fn main() -> Result<()> {
+    env_tracing_logger::init();
+    let cli = Cli::parse();
+
+    // Load the font
+    let font_data = ttf_firacode::REGULAR;
+    // This only succeeds if collection consists of one font
+    let font = Font::try_from_bytes(font_data as &[u8]).expect("Error constructing Font");
+
+    let input_path = cli.input;
+
+    let mut srt_file_path = None;
+    let is_file = std::fs::metadata(&input_path)
+        .with_context(|| format!("While opening input {input_path}"))?
+        .is_file();
+    if !is_file {
+        eyre::bail!("Input path {input_path} is not a file.");
+    }
+    let file_ext = input_path.extension().map(|x| x.to_lowercase());
+
+    if file_ext != Some("mp4".into()) {
+        eyre::bail!("Input file must be an MP4 file.");
+    }
+
+    let mut srt_path = input_path.clone();
+    srt_path.set_extension("srt");
+    if srt_path.exists() && std::fs::metadata(&srt_path)?.is_file() {
+        srt_file_path = Some(srt_path);
+    } else if cli.timestamp_source == TimestampSource::SrtFile {
+        eyre::bail!("Source specified as SRT file, but {srt_path} is not a file.");
+    }
+
+    if !cli.no_progress {
+        eprintln!("Performing initial open of \"{input_path}\".");
+    }
+
+    let mut src = frame_source::FrameSourceBuilder::new(&input_path)
+        .timestamp_source(cli.timestamp_source.into())
+        .srt_file_path(srt_file_path.map(Into::into))
+        .show_progress(!cli.no_progress)
+        .build_source()?;
+
+    let t0: chrono::DateTime<chrono::Utc> = src.frame0_time().unwrap().into();
+    if !cli.no_progress {
+        eprintln!("Done with initial open.");
+    }
+
+    let ffmpeg_codec_args = ffmpeg_writer::FfmpegCodecArgs {
+        codec: Some("libx264".to_string()),
+        ..Default::default()
+    };
+    let mut ffmpeg_wtr =
+        ffmpeg_rewriter::FfmpegReWriter::new(cli.output.as_str(), ffmpeg_codec_args, None, None)?;
+
+    let mut pb: Option<ProgressBar> = if !cli.no_progress {
+        let (lower_bound, _upper_bound) = src.decode_order_iter().size_hint();
+
+        let lower_bound = if let Some(stop_frame) = cli.stop_frame {
+            lower_bound.min(stop_frame.try_into().unwrap())
+        } else {
+            lower_bound
+        };
+
+        // Custom progress bar with space at right end to prevent obscuring last
+        // digit with cursor.
+        let style =
+            ProgressStyle::with_template("Burning timestamps {wide_bar} {pos}/{len} ETA: {eta} ")?;
+        Some(ProgressBar::new(lower_bound.try_into().unwrap()).with_style(style))
+    } else {
+        None
+    };
+
+    for (idx, frame) in src.presentation_order_iter()?.enumerate() {
+        let frame = frame?;
+
+        if let Some(pb) = pb.as_mut() {
+            pb.inc(1);
+        }
+
+        let im = if let Some(im) = frame.decoded() {
+            im
+        } else {
+            eyre::bail!("Frame {idx} has no decoded image data.",);
+        };
+
+        let dur = match frame.timestamp() {
+            frame_source::Timestamp::Duration(dur) => dur,
+            _ => {
+                eyre::bail!("Expected duration timestamp");
+            }
+        };
+        let ts = t0 + dur;
+
+        let text = ts
+            .to_rfc3339_opts(chrono::format::SecondsFormat::Millis, true)
+            .to_string();
+
+        let mut frame_rgb8 = im.into_pixel_format()?.owned();
+        stamp_frame(&mut frame_rgb8, &font, &text)?;
+
+        let dy_im = strand_dynamic_frame::DynamicFrame::from_static_ref(&frame_rgb8);
+
+        ffmpeg_wtr.write_dynamic_frame(&dy_im, ts)?;
+
+        if let Some(stop_frame) = cli.stop_frame
+            && (idx as u64) >= stop_frame
+        {
+            break;
+        }
+    }
+
+    ffmpeg_wtr.close()?;
+    if let Some(pb) = pb {
+        pb.finish_and_clear();
+    }
+
+    Ok(())
+}

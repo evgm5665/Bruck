@@ -1,0 +1,19 @@
+[package]
+name = "braidz-cli"
+version.workspace = true
+authors = ["Andrew Straw <strawman@astraw.com>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "CLI tool to inspect and query .braidz tracking data files"
+
+[dependencies]
+clap.workspace = true
+env-tracing-logger.workspace = true
+serde_yaml.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+tabled.workspace = true
+
+braidz-parser.workspace = true
+braid-types.workspace = true
+groupby.workspace = true

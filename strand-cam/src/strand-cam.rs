@@ -1,6 +1,3 @@
-// modified by eva
-// Preserves puck identities and handles unsupported webcam controls without panicking.
-
 // Copyright (C) The Strand-Braid Authors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
@@ -631,8 +628,6 @@ enum CentroidToDevice {
 pub struct BraidArgs {
     pub braid_url: String,
     pub camera_name: String,
-    // Select local hardware independently of the camera identity registered with Braid.
-    pub camera_device: Option<String>,
 }
 
 /// CLI args for the case when we run standalone.
@@ -1461,14 +1456,9 @@ where
     let target_feature_string = target::features().join(", ");
     info!("Compiled with features: {}", target_feature_string);
 
-    // Use the local device selector when the registered puck ID differs from its camera name.
     let requested_camera_name = match &args.standalone_or_braid {
         StandaloneOrBraid::Standalone(args) => args.camera_name.clone(),
-        StandaloneOrBraid::Braid(args) => Some(
-            args.camera_device
-                .clone()
-                .unwrap_or_else(|| args.camera_name.clone()),
-        ),
+        StandaloneOrBraid::Braid(args) => Some(args.camera_name.clone()),
     };
 
     debug!("Request for camera \"{requested_camera_name:?}\"");
@@ -1620,11 +1610,7 @@ where
         }
     };
 
-    // Carry the registered puck ID into observations, recordings and shared camera state.
-    let raw_name = match &args.standalone_or_braid {
-        StandaloneOrBraid::Braid(args) => args.camera_name.clone(),
-        StandaloneOrBraid::Standalone(_) => cam.name().to_owned(),
-    };
+    let raw_name = cam.name().to_string();
     info!("  got camera {}", raw_name);
     let raw_cam_name = RawCamName::new(raw_name);
 
@@ -2117,8 +2103,7 @@ where
     }
 
     if force_camera_sync_mode {
-        // Report unsupported external triggering as an error instead of panicking.
-        cam.start_default_external_triggering()?;
+        cam.start_default_external_triggering().unwrap();
         if let Some(transmit_msg_tx) = &transmit_msg_tx {
             send_cam_settings_to_braid(
                 &cam.node_map_save()?,
@@ -2133,20 +2118,15 @@ where
     if camera_settings_filename.is_none()
         && let StartSoftwareFrameRateLimit::Enable(fps_limit) = &software_limit_framerate
     {
-        // Tolerate missing frame-rate controls while propagating other camera errors.
-        if feature_or(
-            cam.set_software_frame_rate_limit(*fps_limit).map(|()| true),
-            false,
-        )? {
-            if let Some(ref mut ranged) = frame_rate_limit {
-                ranged.current = cam.acquisition_frame_rate()?;
-            }
-            frame_rate_limit_enabled = cam.acquisition_frame_rate_enable()?;
+        // Set the camera.
+        cam.set_software_frame_rate_limit(*fps_limit).unwrap();
+        // Store the values we set.
+        if let Some(ref mut ranged) = frame_rate_limit {
+            ranged.current = cam.acquisition_frame_rate()?;
         } else {
-            warn!(
-                "Camera frame-rate control is unavailable; the capture rate has not been changed to {fps_limit} FPS"
-            );
+            panic!("cannot set software frame rate limit");
         }
+        frame_rate_limit_enabled = cam.acquisition_frame_rate_enable()?;
     }
 
     let trigger_mode = feature_or(cam.trigger_mode(), ci2::TriggerMode::Off)?;
@@ -2340,7 +2320,7 @@ where
         format_str_mp4: mp4_filename_template,
         format_str: fmf_filename_template,
         format_str_ufmf: ufmf_filename_template,
-        camera_name: raw_cam_name.as_str().into(),
+        camera_name: cam.name().into(),
         camera_gamma,
         recording_filename: None,
         mp4_bitrate: Default::default(),

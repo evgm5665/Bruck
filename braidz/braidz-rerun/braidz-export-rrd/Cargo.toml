@@ -1,0 +1,29 @@
+[package]
+name = "braidz-export-rrd"
+version.workspace = true
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "CLI program to export a rerun .rrd file from a .braidz file"
+
+[dependencies]
+clap.workspace = true
+eyre.workspace = true
+camino.workspace = true
+
+tracing.workspace = true
+re_sdk.workspace = true
+re_sdk_types.workspace = true
+
+rayon = "1.11.0"
+
+braidz-parser.workspace = true
+braidz-rerun.workspace = true
+env-tracing-logger.workspace = true
+frame-source.workspace = true
+strand-cam-remote-control.workspace = true
+mp4-writer = { workspace = true, features = ["nv-encode"] }
+
+[features]
+default = ["openh264-encode"]
+
+openh264-encode = ["mp4-writer/openh264-encode", "frame-source/openh264"]

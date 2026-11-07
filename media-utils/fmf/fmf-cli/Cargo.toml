@@ -1,0 +1,37 @@
+[package]
+name = "fmf-cli"
+description = "work with .fmf (fly movie format) files"
+version.workspace = true
+authors = ["Andrew Straw <strawman@astraw.com>"]
+autobins = false
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "fmf"
+path = "src/fmf-cli.rs"
+doc = false
+
+[dependencies]
+tracing.workspace = true
+env_logger.workspace = true
+clap.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+glob.workspace = true
+image.workspace = true
+machine-vision-formats.workspace = true
+y4m.workspace = true
+
+fmf.workspace = true
+convert-image.workspace = true
+strand-dynamic-frame = { workspace = true, features = ["convert-image"] }
+
+mp4-writer = { workspace = true, features = ["openh264-encode", "nv-encode"] }
+y4m-writer.workspace = true
+strand-cam-remote-control.workspace = true
+
+nvenc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

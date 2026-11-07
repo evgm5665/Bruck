@@ -1,0 +1,171 @@
+name: Check source code in repository
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-readme-updated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Test that README.md is up to date
+        run: |
+          cargo run -p workspace-docs -- --check
+
+  check-cargo-fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Test that `cargo fmt` is happy
+        run: |
+          cargo fmt --check
+
+  check-license-headers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Test that every .rs file has an SPDX license header
+        run: |
+          cargo run -p license-check
+
+  check-cargo-compiles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: check
+      - name: Install Rust wasm target and trunk
+        run: |
+          rustup target add wasm32-unknown-unknown
+          curl --location --remote-name https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-musl.tar.gz
+          tar xzf trunk-x86_64-unknown-linux-musl.tar.gz
+          sudo mv trunk /usr/local/bin/
+          trunk --version
+      # Populate the cargo cache with the FULL dependency graph BEFORE the build.
+      # The strand-cam and braid-run build scripts invoke `trunk` to build their
+      # Yew/WASM frontends, and that nested cargo runs offline
+      # (CARGO_NET_OFFLINE=true) to avoid deadlocking the outer build's package-
+      # cache lock (see build-util::trunk_build). Trunk first runs `cargo
+      # metadata`, which resolves the whole workspace graph for *every* platform
+      # -- including crates gated to other targets (e.g. the macOS-only
+      # accesskit_macos pulled in by the GUI stack). Offline, any package missing
+      # from the cache aborts that metadata call, so a wasm32-only fetch is not
+      # enough. Plain `cargo fetch` downloads the entire graph for all targets.
+      - name: Pre-fetch all dependencies (for the offline trunk frontend build)
+        run: |
+          cargo fetch
+      - name: Check that all crates compile
+        run: |
+          cargo check --workspace --all-targets
+
+  check-cargo-clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: check
+      - name: Install clippy, the Rust wasm target, and trunk
+        run: |
+          rustup component add clippy
+          rustup target add wasm32-unknown-unknown
+          curl --location --remote-name https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-musl.tar.gz
+          tar xzf trunk-x86_64-unknown-linux-musl.tar.gz
+          sudo mv trunk /usr/local/bin/
+          trunk --version
+      # Same rationale as check-cargo-compiles: clippy compiles the whole
+      # workspace, and the strand-cam / braid-run build scripts build their
+      # Yew/WASM frontends with a nested offline cargo that first resolves the
+      # entire dependency graph via `cargo metadata`, so every platform's
+      # dependencies must already be in the cargo cache.
+      - name: Pre-fetch all dependencies (for the offline trunk frontend build)
+        run: |
+          cargo fetch
+      - name: Test that `cargo clippy` is happy (warnings are errors)
+        run: |
+          cargo clippy --workspace --all-targets -- -D warnings
+
+  run-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+      # Some workspace tests shell out to ffmpeg (e.g. apriltag-track-movie's
+      # test_detect_tags decodes a movie fixture), and the GitHub-hosted runner
+      # image does not ship it. The GitLab workspace-test job installs it the same
+      # way.
+      - name: Install ffmpeg (needed by movie-decoding tests)
+        run: |
+          sudo apt-get update
+          DEBIAN_FRONTEND=noninteractive sudo apt-get install -y ffmpeg
+      - name: Install uv (runs the smoke-test Python helper with its deps)
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install Rust wasm target and trunk
+        # Needed because some crates (e.g. strand-cam with its default
+        # `bundle_files` feature) build a wasm frontend as part of the build.
+        run: |
+          rustup target add wasm32-unknown-unknown
+          curl --location --remote-name https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-musl.tar.gz
+          tar xzf trunk-x86_64-unknown-linux-musl.tar.gz
+          sudo mv trunk /usr/local/bin/
+          trunk --version
+      # See the matching note in the check-cargo-compiles job: the strand-cam and
+      # braid-run build scripts build their Yew/WASM frontends with a nested cargo
+      # that runs offline and first resolves the whole workspace graph via `cargo
+      # metadata`, so the entire dependency graph (all platforms) must already be
+      # in the cargo cache before any build that triggers those build scripts.
+      - name: Pre-fetch all dependencies (for the offline trunk frontend build)
+        run: |
+          cargo fetch
+      # Run the whole workspace's tests with default features. This covers most
+      # tests, including the simulation harness (braid-sim, ci2-sim), the
+      # blob/detector contract (flydra-feature-detector), and the frame-rate
+      # "bunching" unit tests in strand-cam (whose default features include
+      # `flydra_feat_detect`): that estimating fps from a bursty host clock
+      # over-reads -- the cause of the live-vs-retrack track fragmentation bug --
+      # while a hardware timestamp stays correct.
+      - name: Workspace tests (default features)
+        run: |
+          cargo test --release --workspace
+      # Layer on tests that need non-default cargo features and so are not built
+      # by the default-feature run above. `flydratrax` (single-camera tracking)
+      # is not a default feature, so build and test strand-cam with it enabled.
+      - name: strand-cam flydratrax-feature tests
+        run: |
+          cargo test --release -p strand-cam \
+            --no-default-features \
+            --features "serve_files flydratrax fiducial" \
+            --lib
+      # The braid-sim in-process detection injector drives the full flydra2
+      # tracker and so is behind the non-default `inprocess` feature. This runs
+      # every `inprocess`-gated test (synthetic 2D detections -> 3D tracks scored
+      # against ground truth): the single-target injector tests, the multi-object
+      # tracking tests, and the fps/calibration regression tests -- all skipped by
+      # the default-feature run above.
+      - name: braid-sim in-process tracker tests
+        run: |
+          cargo test --release -p braid-sim --features inprocess
+      # End-to-end color-recording smoke test (strawlab/strand-braid#29): launch
+      # a standalone strand-cam on the synthetic-image `sim` backend rendering
+      # RGB8, record an MP4 with the ffmpeg codec via the documented Python
+      # helper, and verify a non-empty file is produced. Uses the sim backend
+      # (no Pylon SDK), so it runs here on GitHub CI; the Pylon-backend
+      # equivalent runs in the GitLab `smoke_test_camemu` job. The workspace
+      # test run above already built the strand-cam binary into target/release.
+      - name: strand-cam sim MP4 color-recording smoke test
+        run: |
+          cargo build --release -p strand-cam
+          STRAND_BRAID_TARGET_DIR="$PWD/target/release" \
+            smoke-tests/strand-cam-sim-mp4.sh

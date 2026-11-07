@@ -1,0 +1,11 @@
+[package]
+name = "env-tracing-logger-sample"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "sample program demonstrating env-tracing-logger usage"
+
+[dependencies]
+env-tracing-logger.workspace = true
+log.workspace = true
+tracing.workspace = true

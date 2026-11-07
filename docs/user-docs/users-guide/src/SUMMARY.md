@@ -1,0 +1,18 @@
+# Summary
+
+[Braid and Strand Camera](./braid-and-strand-camera.md)
+- [Hardware selection](./hardware-selection.md)
+- [Installation](./installation.md)
+- [Configuring and Launching Braid](./braid_configuration_and_launching.md)
+- [BRAIDZ files and Analysis Scripts](./braidz-files.md)
+- [Braid: 3D Tracking](./braid_3d_tracking.md)
+- [Parameters for Object Detection and Tracking](./parameters_for_object_detection_and_tracking.md)
+- [Braid: 3D Calibration](./braid_calibration.md)
+- [Braid: Remote cameras](./braid_remote_cameras.md)
+- [Running Braid with many cameras (reverse proxy)](./braid_scaling_reverse_proxy.md)
+- [Remote access with Tailscale](./braid_tailscale_remote_access.md)
+- [Scripting with Python](./scripting-with-python.md)
+- [Offline retracking](./braid_offline_retracking.md)
+- [Processing saved videos](./processing-saved-videos.md)
+- [Fly Movie Format](./fmf_format.md)
+- [Troubleshooting](./troubleshooting.md)

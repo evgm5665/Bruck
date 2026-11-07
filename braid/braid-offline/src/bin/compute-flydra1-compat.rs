@@ -1,0 +1,346 @@
+// Copyright (C) The Strand-Braid Authors
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+// Compute ML_estimates and ML_estimates_2d_idxs tables
+use clap::Parser;
+use csv_eof::EarlyEofOk;
+use itertools::Itertools;
+use serde::Serialize;
+use std::collections::{BTreeMap, HashMap};
+use std::io::{Read, Write};
+use tracing::{error, info, trace};
+
+use flydra2::Result;
+use groupby::AscendingGroupIter;
+
+use braid_types::{DataAssocRow, KalmanEstimatesRow, SyncFno};
+
+use braid_offline::pick_csvgz_or_csv;
+
+// computed later for back-compat
+const COMPUTED_DIRNAME: &str = "flydra1-compat-computed-offline";
+const ML_ESTIMATES_FNAME: &str = "ML_estimates";
+const TWOD_IDXS_FNAME: &str = "ML_estimates_2d_idxs";
+const CONTIGUOUS_ESTIMATES_FNAME: &str = "contiguous_kalman_estimates";
+
+#[derive(Debug, Serialize)]
+pub struct FilteredObservations {
+    pub obj_id: u32,
+    pub frame: SyncFno,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub obs_2d_idx: u64, // index into ML_estimates_2d_idxs sequence
+    pub hz_line0: f32,
+    pub hz_line1: f32,
+    pub hz_line2: f32,
+    pub hz_line3: f32,
+    pub hz_line4: f32,
+    pub hz_line5: f32,
+}
+
+fn no_data_row(obj_id: u32, frame: SyncFno) -> KalmanEstimatesRow {
+    let nan: f64 = f64::NAN;
+
+    KalmanEstimatesRow {
+        obj_id,
+        frame,
+        timestamp: None,
+        x: nan,
+        y: nan,
+        z: nan,
+        xvel: nan,
+        yvel: nan,
+        zvel: nan,
+        P00: nan,
+        P01: nan,
+        P02: nan,
+        P11: nan,
+        P12: nan,
+        P22: nan,
+        P33: nan,
+        P44: nan,
+        P55: nan,
+    }
+}
+
+fn compute_contiguous_kests(dirname: &std::path::Path) -> Result<()> {
+    let dirpath = std::path::PathBuf::from(dirname);
+    info!(
+        "computing contiguous kalman estimates for {}",
+        dirpath.display()
+    );
+
+    let kalman_estimates_reader = {
+        let csv_path = dirpath.join(braid_types::KALMAN_ESTIMATES_CSV_FNAME);
+        let rdr = pick_csvgz_or_csv(&csv_path)?;
+        csv::Reader::from_reader(rdr)
+    };
+
+    {
+        // create dir if needed
+        let mut csv_save_pathbuf = dirpath.clone();
+        csv_save_pathbuf.push(COMPUTED_DIRNAME);
+        std::fs::create_dir_all(&csv_save_pathbuf)?;
+    }
+
+    let mut contiguous_estimates_wtr = {
+        let mut csv_path = dirpath;
+        csv_path.push(COMPUTED_DIRNAME);
+        csv_path.push(CONTIGUOUS_ESTIMATES_FNAME);
+        csv_path.set_extension("csv");
+        let fd = std::fs::File::create(&csv_path)?;
+        csv::Writer::from_writer(fd)
+    };
+
+    let mut kest_per_obj_id = HashMap::new();
+
+    for row in kalman_estimates_reader.into_deserialize().early_eof_ok() {
+        let row: KalmanEstimatesRow = row?;
+
+        // Check if frame number is plausible. This large number is 2**63 and
+        // if the frame number is this high, it suggests there was a problem
+        // computing it.
+        assert!(
+            row.frame.0 < 9223372036854775808,
+            "implausibly large frame number"
+        );
+
+        let rows_entry = &mut kest_per_obj_id.entry(row.obj_id).or_insert_with(Vec::new);
+        rows_entry.push(row);
+    }
+
+    let min_frames = 2;
+    for (obj_id, rows) in kest_per_obj_id.into_iter() {
+        if rows.len() < min_frames {
+            trace!("not enough frames for obj_id {}, skipping", obj_id);
+            continue;
+        }
+
+        let start_frame = rows[0].frame;
+        let stop_frame = rows[rows.len() - 1].frame;
+        trace!(
+            "filling in obj_id {}: {} points in frames {}-{}",
+            obj_id,
+            rows.len(),
+            start_frame,
+            stop_frame
+        );
+
+        let mut by_frame = BTreeMap::new();
+        for row in rows.into_iter() {
+            by_frame.insert(row.frame, row);
+        }
+
+        for frame in start_frame.0..(stop_frame.0 + 1) {
+            let fno: SyncFno = frame.into();
+            let row = match by_frame.remove(&fno) {
+                Some(row) => row,
+                None => no_data_row(obj_id, fno),
+            };
+            contiguous_estimates_wtr.serialize(row)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Save data associations. Requires `frame` in `kalman_estimates_reader` to be ascending.
+fn save_data_association_ascending<R1: Read, R2: Read>(
+    kalman_estimates_reader: csv::Reader<R1>,
+    data_assoc_reader: csv::Reader<R2>,
+    dirpath: std::path::PathBuf,
+) -> Result<()> {
+    let mut wtrs = None;
+
+    let mut twod_idxs_wtr_idx = 0;
+
+    let mut da_iter = data_assoc_reader.into_deserialize::<DataAssocRow>();
+    let mut da_row_frame_iter = AscendingGroupIter::new(&mut da_iter).early_eof_ok();
+
+    let mut kalman_estimates_iter =
+        kalman_estimates_reader.into_deserialize::<KalmanEstimatesRow>();
+    let kest_frame_iter = AscendingGroupIter::new(&mut kalman_estimates_iter).early_eof_ok();
+    let nan: f32 = f32::NAN;
+
+    let opt_next_da_row = da_row_frame_iter.next();
+    if opt_next_da_row.is_none() {
+        // There is no data association data, so nothing to convert and save.
+        return Ok(());
+    }
+    let next_da_row = opt_next_da_row.unwrap(); // get first row;
+    let next_da_row = next_da_row?; // remove Result<>
+    let mut next_da_row_container = Some(next_da_row);
+    for kest_rows in kest_frame_iter {
+        // Get the corresponding data association data for this frame.
+
+        let next_da_row = next_da_row_container.take();
+        let kest_rows = kest_rows?;
+
+        // Gather all data association data for this frame of kalman estimates.
+        let data_assoc_rows = match next_da_row {
+            None => {
+                // done? finish?
+                let opt_next_da_row = da_row_frame_iter.next();
+                if let Some(next_da_row) = opt_next_da_row {
+                    let next_da_row = next_da_row?;
+                    if kest_rows.group_key < next_da_row.group_key {
+                        next_da_row_container = Some(next_da_row);
+                        groupby::GroupedRows {
+                            group_key: kest_rows.group_key,
+                            rows: vec![],
+                        }
+                    } else {
+                        assert!(kest_rows.group_key == next_da_row.group_key);
+                        next_da_row
+                    }
+                } else {
+                    error!(
+                        "data association data finishes prior to kalman \
+                        estimates data."
+                    );
+                    break;
+                }
+            }
+            Some(next) => {
+                if kest_rows.group_key == next.group_key {
+                    next
+                } else {
+                    assert!(kest_rows.group_key < next.group_key);
+                    next_da_row_container = Some(next);
+                    groupby::GroupedRows {
+                        group_key: kest_rows.group_key,
+                        rows: vec![],
+                    }
+                }
+            }
+        };
+
+        // Now we have corresponding data association data for this frame.
+        assert!(data_assoc_rows.group_key == kest_rows.group_key);
+
+        let mut da_by_obj_id = BTreeMap::new();
+        for da_row in data_assoc_rows.rows {
+            let rows_entry = &mut da_by_obj_id.entry(da_row.obj_id).or_insert_with(Vec::new);
+            rows_entry.push(da_row);
+        }
+
+        for kest_row in kest_rows.rows {
+            if wtrs.is_none() {
+                {
+                    // create dir if needed
+                    let mut csv_save_pathbuf = dirpath.clone();
+                    csv_save_pathbuf.push(COMPUTED_DIRNAME);
+                    std::fs::create_dir_all(&csv_save_pathbuf)?;
+                }
+
+                // The first time here we create files and csv::Writer instances.
+                let twod_idxs_wtr = {
+                    let mut csv_path = dirpath.clone();
+                    csv_path.push(COMPUTED_DIRNAME);
+                    csv_path.push(TWOD_IDXS_FNAME);
+                    csv_path.set_extension("vlarray_csv");
+                    std::fs::File::create(&csv_path)?
+                };
+
+                let ml_estimates_wtr = {
+                    let mut csv_path = dirpath.clone();
+                    csv_path.push(COMPUTED_DIRNAME);
+                    csv_path.push(ML_ESTIMATES_FNAME);
+                    csv_path.set_extension("csv");
+                    let fd = std::fs::File::create(&csv_path)?;
+                    csv::Writer::from_writer(fd)
+                };
+
+                wtrs = Some((twod_idxs_wtr, ml_estimates_wtr));
+            };
+
+            let (twod_idxs_wtr, ml_estimates_wtr) = wtrs.as_mut().unwrap();
+
+            let obj_id = kest_row.obj_id;
+            let da_rows = da_by_obj_id.remove(&obj_id);
+
+            // camns_and_idxs
+            let da_rows = da_rows.unwrap_or_else(|| Vec::with_capacity(0));
+
+            let camns_and_idxs = da_rows
+                .into_iter()
+                .flat_map(|x| vec![x.cam_num.0, x.pt_idx].into_iter());
+
+            let csvs = camns_and_idxs
+                .into_iter()
+                .map(|x| format!("{}", x))
+                .join(",");
+            writeln!(twod_idxs_wtr, "{}", csvs)?;
+
+            // TODO: Here calculate x,y,z and hz_line from data2d using
+            // data association data.
+
+            // Also: calculate reprojection error and reconstruction latency.
+
+            let row: FilteredObservations = FilteredObservations {
+                obj_id,
+                frame: kest_row.frame,
+                x: nan,
+                y: nan,
+                z: nan,
+                obs_2d_idx: twod_idxs_wtr_idx, // index into ML_estimates_2d_idxs sequence
+                hz_line0: nan,
+                hz_line1: nan,
+                hz_line2: nan,
+                hz_line3: nan,
+                hz_line4: nan,
+                hz_line5: nan,
+            };
+
+            ml_estimates_wtr.serialize(row)?;
+
+            twod_idxs_wtr_idx += 1;
+        }
+    }
+
+    Ok(())
+}
+
+fn add_ml_estimates_tables(dirname: &std::path::Path) -> Result<()> {
+    let dirpath = std::path::PathBuf::from(dirname);
+    info!(
+        "computing ML_estimates and ML_estimates_2d_idxs for {}",
+        dirpath.display()
+    );
+
+    let data_assoc_reader = {
+        let csv_path = dirpath.join(braid_types::DATA_ASSOCIATE_CSV_FNAME);
+        let rdr = pick_csvgz_or_csv(&csv_path)?;
+        csv::Reader::from_reader(rdr)
+    };
+
+    let kalman_estimates_reader = {
+        let csv_path = dirpath.join(braid_types::KALMAN_ESTIMATES_CSV_FNAME);
+        let rdr = pick_csvgz_or_csv(&csv_path)?;
+        csv::Reader::from_reader(rdr)
+    };
+
+    save_data_association_ascending(kalman_estimates_reader, data_assoc_reader, dirpath)?;
+
+    Ok(())
+}
+
+#[derive(Parser, Debug)]
+#[command(author, version, about)]
+struct Cli {
+    /// Input and output directory
+    dirname: std::path::PathBuf,
+}
+
+fn main() -> Result<()> {
+    env_tracing_logger::init();
+
+    let opt = Cli::parse();
+
+    // Here we operate on a plain directory (rather than a
+    // `zip_or_dir::ZipDirArchive`).
+
+    compute_contiguous_kests(&opt.dirname)?;
+    add_ml_estimates_tables(&opt.dirname)
+}

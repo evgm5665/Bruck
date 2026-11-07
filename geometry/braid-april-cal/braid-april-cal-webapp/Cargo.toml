@@ -1,0 +1,26 @@
+[package]
+name = "braid-april-cal-webapp"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Andrew Straw <strawman@astraw.com>"]
+description = "web app for Braid multi-camera calibration using AprilTags"
+
+[dependencies]
+yew.workspace = true
+yew-tincture.workspace = true
+js-sys.workspace = true
+wasm-bindgen.workspace = true
+web-sys = { workspace = true, features = [
+    "CssStyleDeclaration",
+    "HtmlAnchorElement",
+    "Url",
+] }
+tracing.workspace = true
+wasm-logger.workspace = true
+chrono.workspace = true
+
+ads-webasm = { workspace = true, features = ["csv-widget"] }
+apriltag-detection-writer.workspace = true
+braid-april-cal.workspace = true
+braid-apriltag-types.workspace = true

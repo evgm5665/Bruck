@@ -1,6 +1,3 @@
-// modified by eva
-// Selects webcam capture settings and separates puck IDs from local camera devices.
-
 // Copyright (C) The Strand-Braid Authors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
@@ -14,10 +11,25 @@ use crate::APP_INFO;
 
 use eyre::{Result, WrapErr, eyre};
 
+/// Which camera vendor backend the merged Strand Camera binary should load.
+///
+/// The [`ValueEnum`] value names (`pylon`, `vimba`, `webcam`, `sim`) are the
+/// strings accepted by `--camera-backend`, and match
+/// [`braid_types::StartCameraBackend::camera_backend_arg`], which is how Braid
+/// asks `strand-cam` for a particular backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
 pub enum CameraBackend {
+    /// Basler Pylon backend (`ci2-pylon`).
     #[default]
+    Pylon,
+    /// Allied Vision Vimba backend (`ci2-vimba`).
+    Vimba,
+    /// Consumer webcam backend (`ci2-webcam`), intended for development use.
     Webcam,
+    /// Simulation backend (`ci2-sim`), which renders synthetic images of
+    /// simulated insects for end-to-end testing. The scenario is given by the
+    /// `STRAND_CAM_SIM_SPEC` environment variable.
+    Sim,
 }
 
 /// Enumerate the cameras visible to `mymod` and print them to stdout.
@@ -96,17 +108,49 @@ fn parse_cli(app_name: &str) -> CliArgs {
     CliArgs::from_arg_matches(&matches).unwrap_or_else(|err| err.exit())
 }
 
-// Open the UVC backend using the capture settings supplied on the command line.
+/// Select the camera backend from the command line (defaulting to Pylon),
+/// construct the corresponding camera module, and run the Strand Camera
+/// application.
+///
+/// Only the selected backend's module is constructed, and neither backend loads
+/// its vendor SDK until a camera is actually enumerated or opened. The module is
+/// leaked to obtain the `'static` reference [cli_main] requires (the process
+/// exits immediately afterwards regardless).
 pub fn cli_main_dispatch(app_name: &'static str) -> Result<()> {
     init_process();
+
     let cli = parse_cli(app_name);
-    tracing::info!(backend = ?cli.camera_backend, width = cli.capture_width, height = cli.capture_height, fps = cli.capture_fps, "Selecting capture format");
-    let module: &'static ci2_webcam::WrappedModule = Box::leak(Box::new(
-        ci2_webcam::new_module_with_format(cli.capture_width, cli.capture_height, cli.capture_fps)?,
-    ));
-    let guard = ci2_webcam::make_singleton_guard(&module)?;
-    let mymod = ci2_async::into_threaded_async(module, &guard);
-    cli_main(mymod, cli, app_name)?;
+
+    match cli.camera_backend {
+        CameraBackend::Pylon => {
+            let module: &'static ci2_pylon::WrappedModule =
+                Box::leak(Box::new(ci2_pylon::new_module()?));
+            let guard = ci2_pylon::make_singleton_guard(&module)?;
+            let mymod = ci2_async::into_threaded_async(module, &guard);
+            cli_main(mymod, cli, app_name)?;
+        }
+        CameraBackend::Vimba => {
+            let module: &'static ci2_vimba::WrappedModule =
+                Box::leak(Box::new(ci2_vimba::new_module()?));
+            let guard = ci2_vimba::make_singleton_guard(&module)?;
+            let mymod = ci2_async::into_threaded_async(module, &guard);
+            cli_main(mymod, cli, app_name)?;
+        }
+        CameraBackend::Webcam => {
+            let module: &'static ci2_webcam::WrappedModule =
+                Box::leak(Box::new(ci2_webcam::new_module()?));
+            let guard = ci2_webcam::make_singleton_guard(&module)?;
+            let mymod = ci2_async::into_threaded_async(module, &guard);
+            cli_main(mymod, cli, app_name)?;
+        }
+        CameraBackend::Sim => {
+            let module: &'static ci2_sim::WrappedModule =
+                Box::leak(Box::new(ci2_sim::new_module()?));
+            let guard = ci2_sim::make_singleton_guard(&module)?;
+            let mymod = ci2_async::into_threaded_async(module, &guard);
+            cli_main(mymod, cli, app_name)?;
+        }
+    }
     Ok(())
 }
 
@@ -135,14 +179,6 @@ where
         .with_context(|| "interpreting command-line arguments".to_string())?;
 
     run_strand_cam_app(mymod, args, app_name)
-}
-
-// Reject blank puck identities before attempting registration with Braid.
-fn nonempty_camera_id(value: &str) -> std::result::Result<String, String> {
-    if value.trim().is_empty() {
-        return Err("camera ID must not be empty".into());
-    }
-    Ok(value.to_owned())
 }
 
 fn get_tracker_cfg() -> Result<crate::ImPtDetectCfgSource> {
@@ -188,22 +224,10 @@ pub struct CliArgs {
     #[arg(long)]
     camera_name: Option<String>,
 
-    // A unique network ID lets both pucks select their own local device 0.
-    #[arg(long, requires = "braid_url", value_parser = nonempty_camera_id, help = "Unique camera identity registered with Braid")]
-    camera_id: Option<String>,
-
+    /// Which camera backend library to load. Only meaningful for the merged
+    /// Strand Camera binary that supports multiple backends.
     #[arg(long, default_value_t, value_enum)]
     camera_backend: CameraBackend,
-
-    // Defaults match the intrinsic calibration size and request a 30 FPS MJPEG stream.
-    #[arg(long, default_value_t = 1280, value_parser = clap::value_parser!(u32).range(1..), help = "Capture width in pixels an exact MJPEG stream is required")]
-    capture_width: u32,
-
-    #[arg(long, default_value_t = 800, value_parser = clap::value_parser!(u32).range(1..), help = "Capture height in pixels an exact MJPEG stream is required")]
-    capture_height: u32,
-
-    #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..), help = "Requested capture frames per second an exact MJPEG stream is required")]
-    capture_fps: u32,
 
     /// List the cameras available for the selected backend and exit, without
     /// launching the application or opening a browser.
@@ -333,11 +357,9 @@ impl CliArgs {
                 .camera_name
                 .ok_or_else(|| eyre!("--camera-name must be set when running under Braid"))?;
 
-            // Register the puck ID while retaining the separate local device selector.
             StandaloneOrBraid::Braid(BraidArgs {
                 braid_url,
-                camera_name: self.camera_id.unwrap_or_else(|| camera_name.clone()),
-                camera_device: Some(camera_name),
+                camera_name,
             })
         } else {
             let tracker_cfg_src = get_tracker_cfg()?;
@@ -484,21 +506,28 @@ mod tests {
     }
 
     #[test]
-    fn camera_backend_defaults_to_webcam() {
+    fn camera_backend_defaults_to_pylon() {
         assert_eq!(
             parse_cli_args(&[]).unwrap().camera_backend,
-            CameraBackend::Webcam
+            CameraBackend::Pylon
         );
     }
 
     #[test]
     fn camera_backend_parses_known_values() {
-        assert_eq!(
-            parse_cli_args(&["--camera-backend", "webcam"])
-                .unwrap()
-                .camera_backend,
-            CameraBackend::Webcam
-        );
+        for (text, expected) in [
+            ("pylon", CameraBackend::Pylon),
+            ("vimba", CameraBackend::Vimba),
+            ("webcam", CameraBackend::Webcam),
+            ("sim", CameraBackend::Sim),
+        ] {
+            assert_eq!(
+                parse_cli_args(&["--camera-backend", text])
+                    .unwrap()
+                    .camera_backend,
+                expected
+            );
+        }
     }
 
     #[test]

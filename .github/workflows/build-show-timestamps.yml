@@ -1,0 +1,42 @@
+name: Build show-timestamps app
+
+on:
+  push:
+    branches: [main]
+    tags: ["*"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  show-timestamps-app:
+    strategy:
+      matrix:
+        runs-on: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.runs-on }}
+    defaults:
+      run:
+        working-directory: media-utils/show-timestamps
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Rust
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+      - name: Build show-timestamps app
+        run: |
+          cargo build --release
+      - name: Generate THIRD-PARTY-LICENSES
+        run: |
+          cargo install cargo-bundle-licenses --locked
+          cargo bundle-licenses --format yaml --prefer MIT --output "$GITHUB_WORKSPACE/target/release/THIRD-PARTY-LICENSES.yml"
+        shell: bash
+      - uses: actions/upload-artifact@v6
+        with:
+          name: show-timestamps-${{ matrix.runs-on }}
+          path: |
+            ${{ github.workspace }}/target/release/show-timestam*
+            ${{ github.workspace }}/target/release/THIRD-PARTY-LICENSES.yml

@@ -1,0 +1,17 @@
+[package]
+name = "dump-frame"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "CLI tool to extract and save individual frames from video files"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+machine-vision-formats.workspace = true
+openh264.workspace = true
+image.workspace = true
+y4m.workspace = true
+tiff.workspace = true
+
+convert-image.workspace = true

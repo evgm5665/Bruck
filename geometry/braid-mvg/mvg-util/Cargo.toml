@@ -1,0 +1,20 @@
+[package]
+name = "mvg-util"
+version = "0.1.0"
+authors = ["Andrew Straw <strawman@astraw.com>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "CLI utilities for inspecting and converting camera calibration files"
+
+[dependencies]
+braid-mvg.workspace = true
+flydra-mvg.workspace = true
+clap.workspace = true
+nalgebra.workspace = true
+pretty-print-nalgebra.workspace = true
+eyre.workspace = true
+csv.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

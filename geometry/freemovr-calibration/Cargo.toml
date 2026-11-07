@@ -1,0 +1,38 @@
+[package]
+name = "freemovr-calibration"
+version = "0.6.0"
+authors = ["Andrew Straw <strawman@astraw.com>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "create calibration for FreeMoVR system"
+
+[dependencies]
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+serde_json.workspace = true
+nalgebra.workspace = true
+ncollide2d = { workspace = true, features = ["default"] }
+ncollide3d = { workspace = true, features = ["default", "serde-serialize"] }
+cam-geom.workspace = true
+opencv-ros-camera.workspace = true
+obj.workspace = true
+byteorder.workspace = true
+image.workspace = true
+csv.workspace = true
+chrono.workspace = true
+
+dlt = { workspace = true, features = ["default"] }
+braid-mvg.workspace = true
+camcal.workspace = true
+simple-obj-parse.workspace = true
+textured-tri-mesh.workspace = true
+ncollide-geom.workspace = true
+
+[dev-dependencies]
+approx.workspace = true
+
+[features]
+default = []

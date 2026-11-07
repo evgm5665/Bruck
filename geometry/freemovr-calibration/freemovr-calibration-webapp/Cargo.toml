@@ -1,0 +1,37 @@
+[package]
+name = "freemovr-calibration-webapp"
+version = "0.1.0"
+authors = ["Andrew Straw <strawman@astraw.com>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "web app to create calibration for FreeMoVR system"
+
+[[bin]]
+name = "freemovr-calibration-webapp"
+path = "src/bin/freemovr-calibration-webapp.rs"
+
+[[bin]]
+name = "worker"
+path = "src/bin/worker.rs"
+
+[dependencies]
+yew.workspace = true
+yew-agent = "0.4.0"
+yew-tincture.workspace = true
+js-sys.workspace = true
+wasm-bindgen.workspace = true
+web-sys = { workspace = true, features = [
+    "CssStyleDeclaration",
+    "HtmlAnchorElement",
+] }
+tracing.workspace = true
+wasm-logger.workspace = true
+serde.workspace = true
+chrono.workspace = true
+ncollide3d = { workspace = true, features = ["default", "serde-serialize"] }
+
+braid-mvg.workspace = true
+strand-cam-enum-iter.workspace = true
+ads-webasm = { workspace = true, features = ["obj", "csv-widget"] }
+
+freemovr-calibration = { path = ".." }

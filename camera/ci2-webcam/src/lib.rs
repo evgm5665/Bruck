@@ -1,6 +1,3 @@
-// modified by eva
-// Requests and verifies the exact MJPEG capture resolution and frame rate.
-
 // Copyright (C) The Strand-Braid Authors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
@@ -35,7 +32,7 @@ use std::sync::OnceLock;
 use nokhwa::{
     Camera,
     pixel_format::{LumaFormat, RgbFormat},
-    utils::{CameraFormat, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType},
+    utils::{CameraIndex, RequestedFormat, RequestedFormatType},
 };
 
 use ci2::{
@@ -89,31 +86,10 @@ fn device_name(info: &nokhwa::utils::CameraInfo) -> String {
     info.human_name()
 }
 
-pub struct WrappedModule {
-    capture_format: Option<CameraFormat>,
-}
+pub struct WrappedModule {}
 
 pub fn new_module() -> ci2::Result<WrappedModule> {
-    Ok(WrappedModule {
-        capture_format: None,
-    })
-}
-
-// Validate the requested capture mode before opening a camera.
-pub fn new_module_with_format(width: u32, height: u32, fps: u32) -> ci2::Result<WrappedModule> {
-    if width == 0 || height == 0 || fps == 0 {
-        return Err(ci2::Error::from(
-            "Capture width, height and frame rate must be positive",
-        ));
-    }
-    Ok(WrappedModule {
-        capture_format: Some(CameraFormat::new_from(
-            width,
-            height,
-            FrameFormat::MJPEG,
-            fps,
-        )),
-    })
+    Ok(WrappedModule {})
 }
 
 /// The webcam backend keeps no global SDK state that needs tearing down, so the
@@ -146,7 +122,7 @@ impl<'a> ci2::CameraModule for &'a WrappedModule {
     }
 
     fn camera(self: &mut &'a WrappedModule, name: &str) -> ci2::Result<Self::CameraType> {
-        WrappedCamera::new(name, self.capture_format)
+        WrappedCamera::new(name)
     }
 
     fn settings_file_extension(&self) -> &str {
@@ -215,7 +191,7 @@ fn _test_camera_is_send() {
 }
 
 impl WrappedCamera {
-    fn new(name: &str, capture_format: Option<CameraFormat>) -> ci2::Result<Self> {
+    fn new(name: &str) -> ci2::Result<Self> {
         let devices = enumerate()?;
         if devices.is_empty() {
             return Err(ci2::Error::from("no webcams found"));
@@ -238,22 +214,11 @@ impl WrappedCamera {
 
         let info = WebcamCameraInfo::from_nokhwa(device);
 
-        // Exact selection prevents a different image size from invalidating the calibration.
-        let format = capture_format
-            .map(RequestedFormatType::Exact)
-            .unwrap_or(RequestedFormatType::AbsoluteHighestFrameRate);
-        let requested = RequestedFormat::new::<RgbFormat>(format);
+        // Request the highest available frame rate, decoding to RGB on the
+        // host. Decoding to mono is also possible from the same stream.
+        let requested =
+            RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate);
         let cam = Camera::new(device.index().clone(), requested).map_err(nokhwa_err)?;
-
-        // Reject a backend that negotiates a different mode from the requested one.
-        if let Some(expected) = capture_format
-            && cam.camera_format() != expected
-        {
-            return Err(ci2::Error::from(format!(
-                "Camera selected {} instead of the requested {expected}",
-                cam.camera_format()
-            )));
-        }
 
         info!(
             "opened webcam \"{}\" with format {}",

@@ -1,0 +1,38 @@
+[package]
+name = "braid-april-cal-cli"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Create a multi-camera calibration using known intrinsics and the SQPnP algorithm"
+
+[dependencies]
+eyre.workspace = true
+clap.workspace = true
+nalgebra.workspace = true
+serde_yaml.workspace = true
+tracing.workspace = true
+camino.workspace = true
+levenberg-marquardt-sparse.workspace = true
+re_sdk = { workspace = true, optional = true }
+re_sdk_types = { workspace = true, optional = true }
+opencv-ros-camera.workspace = true
+chrono.workspace = true
+libflate.workspace = true
+
+ads-webasm = { workspace = true, features = ["csv-widget"] }
+braid-april-cal.workspace = true
+braid-apriltag-types.workspace = true
+braid-mvg.workspace = true
+bundle-adj.workspace = true
+flydra-mvg.workspace = true
+env-tracing-logger.workspace = true
+cam-geom.workspace = true
+
+[dev-dependencies]
+zip.workspace = true
+download-verify.workspace = true
+tracing-test.workspace = true
+tempfile.workspace = true
+
+[features]
+with-rerun = ["dep:re_sdk", "dep:re_sdk_types", "bundle-adj/with-rerun"]

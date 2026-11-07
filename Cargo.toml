@@ -1,151 +1,87 @@
+# modified by eva
+# Keeps the puck and companion applications with their required workspace dependencies.
+
 [workspace]
 resolver = "3"
+# Retain both runtime applications and every local crate they reference.
 members = [
     "braid",
+    "braid/braid-config-data",
     "braid/braid-run",
     "braid/braid-run/braid_frontend",
-    "braid/braidz-writer",
-    "braid/braidz-writer/cli",
     "braid/braid-types",
-    "braid/braid-config-data",
-    "braid/braid-offline",
-    "braid/braid-process-video",
+    "braid/braidz-writer",
     "braid/flydra2",
     "braid/tracking",
-    "braid/braid-sim",
-    "braidz/braidz-parser",
-    "braidz/braidz-parser/braidz-chunked-iter",
-    "braidz/braidz-parser/braidz-chunked-iter/pybraidz-chunked-iter",
-    "braidz/braidz-parser/braidz-cli",
-    "braidz/braidz-rerun",
-    "braidz/braidz-rerun/braidz-export-rrd",
-    "braidz/braidz-rerun/rerun-braidz-viewer",
     "braidz/braidz-types",
-    "braidz/braidz-viewer",
-    "braidz/flytrax-csv-to-braidz",
     "camera/ci2",
     "camera/ci2-async",
-    "camera/ci2-cli",
-    "camera/ci2-pylon-types",
-    "camera/ci2-pylon",
-    "camera/ci2-simple-async-demo",
-    "camera/ci2-simple-demo",
-    "camera/ci2-vimba",
-    "camera/ci2-vimba-types",
     "camera/ci2-webcam",
-    "camera/ci2-sim",
     "camera/strand-cam-remote-control",
     "camera/strand-cam-types",
-    "camera/vimba",
-    "geometry/freemovr-calibration",
-    "geometry/freemovr-calibration/freemovr-calibration-cli",
-    "geometry/freemovr-calibration/freemovr-calibration-webapp",
-    "geometry/freemovr-calibration/ncollide-geom",
-    "geometry/braid-april-cal",
-    "geometry/braid-april-cal/braid-april-cal-cli",
-    "geometry/braid-april-cal/braid-april-cal-webapp",
-    "geometry/braid-april-cal/flytrax-apriltags-calibration",
     "geometry/braid-apriltag-types",
     "geometry/braid-mvg",
-    "geometry/braid-mvg/mvg-util",
-    "geometry/braidz-mcsc",
-    "geometry/bundle-adj",
     "geometry/camcal",
-    "geometry/flydra-mvg",
     "geometry/checkerboard-calibrate",
-    "geometry/checkerboard-calibrate/find-chessboard",
-    "geometry/mcsc-native",
-    "geometry/mcsc-native/gocal",
-    "geometry/mcsc-structs",
+    "geometry/flydra-mvg",
     "geometry/parry-geom",
     "geometry/refraction",
     "geometry/refraction/bisection-search",
     "geometry/simple-obj-parse",
     "geometry/textured-tri-mesh",
-    "geometry/undistort-image",
     "im-proc/ads-apriltag",
-    "im-proc/ads-apriltag/apriltag-track-movie",
     "im-proc/fastfreeimage",
     "im-proc/flydra-feature-detector",
     "im-proc/flydra-feature-detector/flydra-feature-detector-types",
     "im-proc/flydra-feature-detector/flydra-pt-detect-cfg",
     "im-proc/imops",
     "im-proc/strand-dynamic-frame",
-    "led-box/led-box",
-    "led-box/led-box-standalone",
     "led-box/strand-led-box-comms",
     "media-utils/apriltag-detection-writer",
     "media-utils/bg-movie-writer",
-    "media-utils/burn-timestamps",
-    "media-utils/create-timelapse",
-    "media-utils/dump-frame",
-    "media-utils/ffmpeg-writer",
     "media-utils/ffmpeg-rewriter",
-    "media-utils/ffmpeg-rewriter-doctor",
+    "media-utils/ffmpeg-writer",
     "media-utils/fmf",
-    "media-utils/fmf/fmf-cli",
     "media-utils/font-drawing",
     "media-utils/frame-source",
     "media-utils/less-avc-wrapper",
     "media-utils/mkv-parser-kit",
     "media-utils/mkv-strand-reader",
-    "media-utils/mp4-bframe-doctor",
-    "media-utils/mp4-misp-inserter",
     "media-utils/mp4-writer",
     "media-utils/nvenc",
     "media-utils/nvenc/dynlink-cuda",
     "media-utils/nvenc/dynlink-nvidia-encode",
-    "media-utils/nvenc/dynlink-nvidia-encode/gen-nvenc-bindings",
-    "media-utils/show-timestamps",
     "media-utils/srt-writer",
-    "media-utils/strand-convert",
-    "media-utils/tiff-decoder",
     "media-utils/ufmf",
-    "media-utils/video2rrd",
     "media-utils/y4m-writer",
     "strand-cam",
-    "strand-cam/strand-cam-offline-checkerboards",
-    "strand-cam/strand-cam-gui",
-    "strand-cam/yew_frontend",
     "strand-cam/strand-cam-csv-config-types",
     "strand-cam/strand-cam-pseudo-cal",
     "strand-cam/strand-cam-storetype",
+    "strand-cam/yew_frontend",
     "utils/build-util",
-    "utils/csv-eof",
     "utils/download-verify",
-    "utils/groupby",
-    "utils/license-check",
     "utils/env-tracing-logger",
-    "utils/env-tracing-logger/env-tracing-logger-sample",
+    "utils/license-check",
     "utils/strand-cam-enum-iter",
     "utils/strand-datetime-conversion",
     "utils/strand-version-check",
     "utils/strand-withkey",
     "utils/workspace-docs",
-    "utils/write-debian-changelog",
-    "utils/zip-or-dir",
-    "utils/zip-or-dir/dir2zip",
     "web/ads-webasm",
-    "web/ads-webasm/example",
+    "web/braid-http-session",
     "web/event-stream-types",
     "web/strand-bui-backend-session",
     "web/strand-bui-backend-session/types",
     "web/strand-cam-bui-components",
+    "web/strand-cam-bui-types",
     "web/strand-http-video-streaming",
     "web/strand-http-video-streaming/strand-http-video-streaming-types",
 ]
 
-exclude = [
-    "led-box/led-box-firmware",
-    "led-box/led-box-firmware-pico",
-]
+# Build the puck and companion applications by default.
+default-members = ["strand-cam", "braid/braid-run"]
 
-# The single source of truth for the strand-braid release version. Every crate
-# that participates in a release inherits this with `version.workspace = true`;
-# crates with their own independent version simply do not opt in. The
-# strand-braid .deb takes its version from here (via write-debian-changelog's
-# CARGO_PKG_VERSION). To bump: edit the version below, then run
-# `cargo update --workspace` (see docs/developer-docs/making-releases.md).
 [workspace.package]
 version = "1.0.0-rc.6"
 
@@ -303,33 +239,21 @@ apriltag-detection-writer = { path = "media-utils/apriltag-detection-writer" }
 bisection-search = { path = "geometry/refraction/bisection-search" }
 bg-movie-writer = { path = "media-utils/bg-movie-writer" }
 braid = { path = "braid" }
-braid-april-cal = { path = "geometry/braid-april-cal" }
 braid-apriltag-types = { path = "geometry/braid-apriltag-types" }
 braid-config-data = { path = "braid/braid-config-data" }
 braid-http-session = { path = "web/braid-http-session" }
-braid-offline = { path = "braid/braid-offline" }
 braid-mvg = { path = "geometry/braid-mvg", version = "0.1.0" }
-braid-sim = { path = "braid/braid-sim" }
 braid-types = { path = "braid/braid-types", default-features = false }
-braidz-parser = { path = "braidz/braidz-parser" }
-braidz-rerun = { path = "braidz/braidz-rerun" }
 braidz-types = { path = "braidz/braidz-types" }
 braidz-writer = { path = "braid/braidz-writer" }
 build-util = { path = "utils/build-util" }
-bundle-adj = { path = "geometry/bundle-adj" }
 checkerboard-calibrate = { path = "geometry/checkerboard-calibrate" }
 camcal = { path = "geometry/camcal" }
 ci2 = { path = "camera/ci2" }
 ci2-async = { path = "camera/ci2-async" }
-ci2-pylon-types = { path = "camera/ci2-pylon-types" }
-ci2-pylon = { path = "camera/ci2-pylon" }
 strand-cam-remote-control = { path = "camera/strand-cam-remote-control", version = "0.1.0" }
 strand-cam-types = { path = "camera/strand-cam-types", version = "0.1.0" }
-ci2-vimba = { path = "camera/ci2-vimba" }
-ci2-vimba-types = { path = "camera/ci2-vimba-types" }
 ci2-webcam = { path = "camera/ci2-webcam" }
-ci2-sim = { path = "camera/ci2-sim" }
-csv-eof = { path = "utils/csv-eof" }
 download-verify = { path = "utils/download-verify" }
 dynlink-cuda = { path = "media-utils/nvenc/dynlink-cuda" }
 dynlink-nvidia-encode = { path = "media-utils/nvenc/dynlink-nvidia-encode" }
@@ -344,19 +268,13 @@ flydra-feature-detector-types = { path = "im-proc/flydra-feature-detector/flydra
 flydra-pt-detect-cfg = { path = "im-proc/flydra-feature-detector/flydra-pt-detect-cfg", version = "0.1.0" }
 flydra-mvg = { path = "geometry/flydra-mvg" }
 flydra2 = { path = "braid/flydra2", default-features = false }
-gocal = { path = "geometry/mcsc-native/gocal" }
-flytrax-apriltags-calibration = { path = "geometry/braid-april-cal/flytrax-apriltags-calibration" }
 fmf = { path = "media-utils/fmf" }
 font-drawing = { path = "media-utils/font-drawing" }
 frame-source = { path = "media-utils/frame-source" }
-groupby = { path = "utils/groupby" }
 imops = { path = "im-proc/imops" }
 less-avc-wrapper = { path = "media-utils/less-avc-wrapper" }
-mcsc-native = { path = "geometry/mcsc-native" }
-mcsc-structs = { path = "geometry/mcsc-structs" }
 mkv-strand-reader = { path = "media-utils/mkv-strand-reader" }
 mp4-writer = { path = "media-utils/mp4-writer" }
-ncollide-geom = { path = "geometry/freemovr-calibration/ncollide-geom" }
 nvenc = { path = "media-utils/nvenc" }
 parry-geom = { path = "geometry/parry-geom" }
 refraction = { path = "geometry/refraction" }
@@ -378,13 +296,9 @@ strand-http-video-streaming-types = { path = "web/strand-http-video-streaming/st
 strand-led-box-comms = { path = "led-box/strand-led-box-comms", version = "0.1.0" }
 strand-withkey = { path = "utils/strand-withkey", version = "0.1.0" }
 textured-tri-mesh = { path = "geometry/textured-tri-mesh" }
-tiff-decoder = { path = "media-utils/tiff-decoder" }
 tracking = { path = "braid/tracking" }
 ufmf = { path = "media-utils/ufmf" }
-undistort-image = { path = "geometry/undistort-image" }
-vimba = { path = "camera/vimba" }
 y4m-writer = { path = "media-utils/y4m-writer" }
-zip-or-dir = { path = "utils/zip-or-dir" }
 
 [replace]
 # "tokio-threadpool:0.1.6" = {git="https://bare-git.strawlab.org/tokio.git", rev="472e64c1ea67f3976191cb1b291061faf2082735"}

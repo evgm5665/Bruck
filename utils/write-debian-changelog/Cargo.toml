@@ -1,9 +1,0 @@
-[package]
-name = "write-debian-changelog"
-description = "simple and hacky CLI program to print a debian changelog"
-version.workspace = true
-edition = "2024"
-license = "MIT OR Apache-2.0"
-
-[dependencies]
-chrono.workspace = true

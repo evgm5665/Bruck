@@ -1,3 +1,6 @@
+// modified by eva
+// Limits camera startup to remote pucks and local UVC cameras.
+
 // Copyright (C) The Strand-Braid Authors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
@@ -423,48 +426,24 @@ const fn default_send_current_image_interval_msec() -> u64 {
 }
 
 /// Camera backend selection for local camera startup.
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
-#[derive(Default)]
 pub enum StartCameraBackend {
     /// Do not start a camera locally. Rather, wait for a remote camera to connect.
-    Remote,
-    /// Start a Pylon camera locally using the `strand-cam` program with the
-    /// `--camera-backend pylon` argument.
+    // Each remote camera runs on its own puck and connects to Braid over the network.
     #[default]
-    Pylon,
-    /// Start a Vimba camera locally using the `strand-cam` program with the
-    /// `--camera-backend vimba` argument.
-    Vimba,
+    Remote,
     /// Start a consumer webcam locally using the `strand-cam` program with
     /// the `--camera-backend webcam` argument.
-    ///
-    /// Intended for development use. The camera `name` to use in the
-    /// configuration is the human-readable device name of the webcam.
     Webcam,
-    /// Start a simulated camera locally using the `strand-cam` program with the
-    /// `--camera-backend sim` argument.
-    ///
-    /// Used for end-to-end testing with no hardware: the camera renders
-    /// synthetic images of simulated insects. The scenario is given by the
-    /// `STRAND_CAM_SIM_SPEC` environment variable, and the camera `name` is one
-    /// of the simulated camera names (e.g. `simcam0`).
-    Sim,
 }
 
 impl StartCameraBackend {
     /// Get the executable name for the camera backend.
-    ///
-    /// All local backends are served by the single merged `strand-cam`
-    /// executable, which selects the backend at runtime via
-    /// [Self::camera_backend_arg].
     pub fn strand_cam_exe_name(&self) -> Option<&str> {
         match self {
-            StartCameraBackend::Remote => None,
-            StartCameraBackend::Pylon
-            | StartCameraBackend::Vimba
-            | StartCameraBackend::Webcam
-            | StartCameraBackend::Sim => Some("strand-cam"),
+            Self::Remote => None,
+            Self::Webcam => Some("strand-cam"),
         }
     }
 
@@ -473,11 +452,8 @@ impl StartCameraBackend {
     /// the remote machine).
     pub fn camera_backend_arg(&self) -> Option<&'static str> {
         match self {
-            StartCameraBackend::Remote => None,
-            StartCameraBackend::Pylon => Some("pylon"),
-            StartCameraBackend::Vimba => Some("vimba"),
-            StartCameraBackend::Webcam => Some("webcam"),
-            StartCameraBackend::Sim => Some("sim"),
+            Self::Remote => None,
+            Self::Webcam => Some("webcam"),
         }
     }
 }

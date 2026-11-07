@@ -1,3 +1,6 @@
+// modified by eva
+// Removes vendor metadata extraction from the webcam frame-processing path.
+
 // Copyright (C) The Strand-Braid Authors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
@@ -1808,18 +1811,8 @@ struct FlydraConfigState {
     kalman_tracking_config: strand_cam_storetype::KalmanTrackingConfig,
 }
 
-/// Get device_timestamp and block_id from backend-specific data, if available.
-fn extract_backend_data(frame: &ci2::DynamicFrameWithInfo) -> (Option<u64>, Option<u64>) {
-    if let Some(backend_data) = frame.backend_data.as_ref() {
-        let any = ci2::AsAny::as_any(&**backend_data);
-        if let Some(xtra_pylon) = any.downcast_ref::<ci2_pylon_types::PylonExtra>() {
-            tracing::trace!("{xtra_pylon:?}");
-            return (Some(xtra_pylon.device_timestamp), Some(xtra_pylon.block_id));
-        } else if let Some(xtra_vimba) = any.downcast_ref::<ci2_vimba_types::VimbaExtra>() {
-            tracing::trace!("{xtra_vimba:?}");
-            return (Some(xtra_vimba.device_timestamp), Some(xtra_vimba.frame_id));
-        }
-    }
+// The webcam backend currently supplies neither a device timestamp nor a hardware frame ID.
+fn extract_backend_data(_frame: &ci2::DynamicFrameWithInfo) -> (Option<u64>, Option<u64>) {
     (None, None)
 }
 
